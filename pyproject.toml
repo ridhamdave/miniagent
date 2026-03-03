@@ -1,0 +1,36 @@
+[project]
+name = "miniagent"
+version = "0.1.0"
+description = "Simplified personal AI gateway mirroring OpenClaw's architecture"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=0.40.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "websockets>=13.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+    "aiohttp>=3.11.0",
+    "playwright>=1.49.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+miniagent = "miniagent.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.27.0",
+    "pytest-cov>=6.0.0",
+]
