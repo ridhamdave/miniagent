@@ -12,8 +12,6 @@ Browser UI  ──WS──►  Gateway :18789  ──asyncio.Task──►  Clau
 
 ## Screenshots
 
-> _Add your own — see [`docs/screenshots/README.md`](docs/screenshots/README.md) for instructions._
-
 | Chat with streaming | Browser control in action |
 |---|---|
 | ![Chat](docs/screenshots/chat-done.png) | ![Browser](docs/screenshots/browser-screenshot.png) |
