@@ -70,9 +70,14 @@ class AgentPipeline:
 
         # Anthropic client — imported here so tests can mock anthropic.AsyncAnthropic
         import anthropic
+        from ..config.settings import EnvSettings
 
         self._anthropic_module = anthropic
-        self.client = anthropic.AsyncAnthropic()
+        try:
+            api_key = EnvSettings().anthropic_api_key
+        except Exception:
+            api_key = None
+        self.client = anthropic.AsyncAnthropic(**({"api_key": api_key} if api_key else {}))
         self._seq = 0
 
     @classmethod
@@ -118,10 +123,15 @@ class AgentPipeline:
             history is used directly. If session_store is set, history is loaded from store.
         """
         if self.session_store is not None:
-            # Full mode: load from JSONL store
-            messages = await self.session_store.load_messages(self.session_key)
-            await self.session_store.append_message(
-                self.session_key, "user", message, self.run_id
+            # Full mode: load from JSONL store (generic API: load/append)
+            stored = await self.session_store.load(self.session_key)
+            messages = [
+                {"role": e["role"], "content": e["content"]}
+                for e in stored
+                if "role" in e and "content" in e
+            ]
+            await self.session_store.append(
+                self.session_key, {"role": "user", "content": message, "run_id": self.run_id}
             )
         elif history is not None:
             messages = list(history)
@@ -135,8 +145,8 @@ class AgentPipeline:
         final_text, _new_messages = await self._run_turn(messages)
 
         if self.session_store is not None:
-            await self.session_store.append_message(
-                self.session_key, "assistant", final_text, self.run_id
+            await self.session_store.append(
+                self.session_key, {"role": "assistant", "content": final_text, "run_id": self.run_id}
             )
 
         await self._emit("lifecycle", {"status": "complete", "run_id": self.run_id})
@@ -259,7 +269,7 @@ class AgentPipeline:
                 {
                     "type": "tool_result",
                     "tool_use_id": block.id,
-                    "content": str(result),
+                    "content": _tool_result_content(tool_name, result),
                 }
             )
 
@@ -268,3 +278,25 @@ class AgentPipeline:
     async def _emit(self, stream: str, data: dict) -> None:
         """Emit one agent event. Auto-increments per-run seq."""
         await self.emitter.emit(self.run_id, stream, data, self.session_key)
+
+
+def _tool_result_content(tool_name: str, result: dict) -> str | list:
+    """
+    Convert a tool result dict to the right Anthropic content format.
+
+    Screenshots must be sent as vision image blocks — sending base64 as plain
+    text balloons the context to millions of tokens.  All other results are
+    stringified as before.
+    """
+    if tool_name == "screenshot" and "image_b64" in result:
+        return [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": result.get("mime_type", "image/png"),
+                    "data": result["image_b64"],
+                },
+            }
+        ]
+    return str(result)

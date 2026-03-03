@@ -57,18 +57,27 @@ class BrowserContext:
         return {"ok": True, "url": page.url, "title": await page.title()}
 
     async def screenshot(self) -> bytes:
-        """Full-page PNG screenshot."""
+        """Viewport-only PNG screenshot (Anthropic max: 8000px per dimension)."""
         page = await self.get_page()
-        return await page.screenshot(full_page=True)
+        return await page.screenshot(full_page=False)
 
     async def click(self, ref: str, double_click: bool = False) -> None:
-        """Click element by Playwright locator string."""
+        """Click element by Playwright locator string.
+
+        Falls back to dispatch_event('click') when pointer interception blocks
+        the normal click (common on JS-heavy sites like Google News).
+        """
         page = await self.get_page()
         locator = page.locator(ref)
+        timeout = get_config().browser.timeout_ms
         if double_click:
-            await locator.dbl_click(timeout=get_config().browser.timeout_ms)
+            await locator.dbl_click(timeout=timeout)
         else:
-            await locator.click(timeout=get_config().browser.timeout_ms)
+            try:
+                await locator.click(timeout=timeout)
+            except Exception:
+                # Pointer intercepted by overlay — dispatch the click event directly
+                await locator.dispatch_event("click")
 
     async def type_text(self, ref: str, text: str) -> None:
         page = await self.get_page()

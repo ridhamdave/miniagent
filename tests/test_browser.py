@@ -435,7 +435,7 @@ class TestBrowserContextMethodsWithMocks:
 
         result = await ctx.screenshot()
 
-        mock_page.screenshot.assert_awaited_once_with(full_page=True)
+        mock_page.screenshot.assert_awaited_once_with(full_page=False)
         assert result == fake_png
 
     async def test_click_calls_locator_click(self) -> None:

@@ -178,11 +178,63 @@
       max-width: 360px;
     }
 
-    /* Token text area */
+    /* Token text area — pre-wrap during streaming, normal after render */
     .token-text {
       white-space: pre-wrap;
       margin-top: 4px;
     }
+    .token-text.rendered {
+      white-space: normal;
+    }
+
+    /* Markdown rendered output */
+    .token-text.rendered p  { margin: 0 0 0.6em; }
+    .token-text.rendered p:last-child { margin-bottom: 0; }
+    .token-text.rendered h1,
+    .token-text.rendered h2,
+    .token-text.rendered h3 { margin: 0.8em 0 0.3em; font-family: var(--mono); color: var(--text); }
+    .token-text.rendered h1 { font-size: 1.2em; }
+    .token-text.rendered h2 { font-size: 1.1em; }
+    .token-text.rendered h3 { font-size: 1em; }
+    .token-text.rendered ul,
+    .token-text.rendered ol  { margin: 0.4em 0 0.6em 1.4em; padding: 0; }
+    .token-text.rendered li  { margin: 0.2em 0; }
+    .token-text.rendered code {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 1px 5px;
+      font-family: var(--mono);
+      font-size: 0.92em;
+    }
+    .token-text.rendered pre {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      overflow-x: auto;
+      margin: 0.5em 0;
+    }
+    .token-text.rendered pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .token-text.rendered blockquote {
+      border-left: 3px solid var(--accent);
+      margin: 0.4em 0;
+      padding: 2px 12px;
+      color: var(--text-dim);
+    }
+    .token-text.rendered hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 0.6em 0;
+    }
+    .token-text.rendered strong { color: var(--text); }
+    .token-text.rendered a { color: var(--accent); text-decoration: underline; }
 
     /* Streaming cursor */
     .cursor {
@@ -370,7 +422,9 @@
 <script>
 // ── Constants ─────────────────────────────────────────────────────
 const WS_URL        = "ws://localhost:18789/ws";
-const SESSION_KEY   = "default";
+// Unique per page-load — each tab/refresh starts a clean history.
+// Change to a fixed string (e.g. "default") to persist history across reloads.
+const SESSION_KEY   = "session-" + crypto.randomUUID();
 const RECONNECT_MIN = 500;   // ms
 const RECONNECT_MAX = 5000;  // ms
 
@@ -732,6 +786,10 @@ function finalizeRun(runId) {
     if (entry && !entry.finalized) {
       entry.finalized = true;
       entry.cursorEl.remove();
+      // Render accumulated plain-text markdown → HTML
+      const raw = entry.tokenEl.textContent;
+      entry.tokenEl.innerHTML = renderMarkdown(raw);
+      entry.tokenEl.classList.add("rendered");
       entry.wrapper.classList.add("done");
     }
   }
@@ -779,6 +837,78 @@ function escHtml(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+/** Minimal markdown → HTML renderer (no external deps). */
+function renderMarkdown(raw) {
+  // 1. Stash fenced code blocks to protect them from inline rules
+  const blocks = [];
+  let s = raw.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    blocks.push(`<pre><code>${escHtml(code.trimEnd())}</code></pre>`);
+    return `\x00BLK${blocks.length - 1}\x00`;
+  });
+
+  // 2. Stash inline code spans
+  const spans = [];
+  s = s.replace(/`([^`\n]+)`/g, (_, c) => {
+    spans.push(`<code>${escHtml(c)}</code>`);
+    return `\x00SPN${spans.length - 1}\x00`;
+  });
+
+  // 3. Escape remaining HTML
+  s = s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  // 4. Block-level rules (applied line-by-line via paragraph splitting)
+  const lines = s.split("\n");
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    // Headings
+    const h3 = line.match(/^### (.+)/); if (h3) { out.push(`<h3>${inline(h3[1])}</h3>`); i++; continue; }
+    const h2 = line.match(/^## (.+)/);  if (h2) { out.push(`<h2>${inline(h2[1])}</h2>`); i++; continue; }
+    const h1 = line.match(/^# (.+)/);   if (h1) { out.push(`<h1>${inline(h1[1])}</h1>`); i++; continue; }
+    // Horizontal rule
+    if (/^---+$/.test(line)) { out.push("<hr>"); i++; continue; }
+    // Blockquote
+    if (line.startsWith("&gt; ")) { out.push(`<blockquote>${inline(line.slice(5))}</blockquote>`); i++; continue; }
+    // Unordered list item
+    if (/^[\-\*] /.test(line)) {
+      const items = [];
+      while (i < lines.length && /^[\-\*] /.test(lines[i])) {
+        items.push(`<li>${inline(lines[i].replace(/^[\-\*] /, ""))}</li>`); i++;
+      }
+      out.push(`<ul>${items.join("")}</ul>`); continue;
+    }
+    // Ordered list item
+    if (/^\d+\. /.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\d+\. /.test(lines[i])) {
+        items.push(`<li>${inline(lines[i].replace(/^\d+\. /, ""))}</li>`); i++;
+      }
+      out.push(`<ol>${items.join("")}</ol>`); continue;
+    }
+    // Blank line → paragraph break
+    if (line.trim() === "") { out.push("<br>"); i++; continue; }
+    // Normal paragraph line
+    out.push(`<p>${inline(line)}</p>`); i++;
+  }
+
+  // 5. Inline formatting
+  function inline(t) {
+    return t
+      .replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>")
+      .replace(/\*\*(.+?)\*\*/g,     "<strong>$1</strong>")
+      .replace(/\*(.+?)\*/g,         "<em>$1</em>")
+      .replace(/_(.+?)_/g,           "<em>$1</em>")
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  }
+
+  // 6. Restore stashed spans and blocks
+  let html = out.join("\n");
+  spans.forEach((v, i) => { html = html.replace(`\x00SPN${i}\x00`, v); });
+  blocks.forEach((v, i) => { html = html.replace(`\x00BLK${i}\x00`, v); });
+  return html;
 }
 
 // ── Send message ──────────────────────────────────────────────────

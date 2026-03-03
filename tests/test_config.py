@@ -290,7 +290,8 @@ def test_envsettings_port_none_when_unset(monkeypatch):
 def test_envsettings_anthropic_api_key_optional(monkeypatch):
     """anthropic_api_key must be Optional so tests work without a real key."""
     monkeypatch.delenv("MINIAGENT_ANTHROPIC_API_KEY", raising=False)
-    env = EnvSettings()
+    # _env_file=None prevents pydantic-settings from reading the real .env file
+    env = EnvSettings(_env_file=None)
     assert env.anthropic_api_key is None
 
 

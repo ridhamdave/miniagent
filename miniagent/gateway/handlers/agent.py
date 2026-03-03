@@ -22,8 +22,11 @@ Why the callback instead of return value:
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 import uuid
+
+logger = logging.getLogger(__name__)
 
 from ...agent.events import AgentEventEmitter
 from ...agent.pipeline import AgentPipeline
@@ -92,6 +95,7 @@ def make_agent_handler(
                 except Exception:
                     pass
             except Exception as e:
+                logger.error("Agent pipeline error [run_id=%s]: %s", run_id, e, exc_info=True)
                 err = error_shape(ErrorCode.INTERNAL, str(e))
                 session_state.dedupe[idem_key] = {"ok": False, "error": err.model_dump()}
                 try:
