@@ -10,6 +10,109 @@ Browser UI  ──WS──►  Gateway :18789  ──asyncio.Task──►  Clau
                           └──HTTP──►  Browser Server :18790  ──►  Playwright Chromium
 ```
 
+## Screenshots
+
+> _Add your own — see [`docs/screenshots/README.md`](docs/screenshots/README.md) for instructions._
+
+| Chat with streaming | Browser control in action |
+|---|---|
+| ![Chat](docs/screenshots/chat-done.png) | ![Browser](docs/screenshots/browser-screenshot.png) |
+
+---
+
+## Usage guide
+
+### Basic chat
+
+Type a message and press **Enter** (or **Shift+Enter** for a newline). Responses stream in token-by-token and are rendered as markdown when complete.
+
+The assistant label turns green when a response is in progress. Click **Stop** to abort the current run — the pipeline cancels mid-stream.
+
+Each browser tab gets its own conversation — opening a new tab starts fresh. Within a tab, the full conversation history is in scope so you can ask follow-up questions naturally.
+
+### Asking Claude to browse
+
+Claude has five browser tools it can use autonomously:
+
+| Tool | What it does |
+|------|-------------|
+| `navigate` | Go to a URL |
+| `screenshot` | Take a viewport PNG — Claude sees it via vision |
+| `click` | Click an element by text or CSS selector |
+| `type_text` | Type into an input field |
+| `get_text` | Extract text from the page or a specific element |
+| `scroll` | Scroll the page in any direction |
+
+You don't invoke these manually — just describe what you want and Claude decides which tools to call and in what order.
+
+**Example prompts that work well:**
+
+```
+Show me the top headlines on news.ycombinator.com, with a screenshot
+```
+```
+Go to github.com/trending and summarise what's trending in Python today
+```
+```
+Search for "asyncio tutorial" on Google and open the first result
+```
+```
+Go to weather.com, find the forecast for New York, and tell me if I need an umbrella this week
+```
+
+### Tool call indicators
+
+While Claude is browsing you'll see ⚙ indicators in the bubble — one per tool call — showing the tool name and a preview of its input. Screenshots are rendered inline so you can see exactly what Claude saw when it made decisions.
+
+### Watching the browser
+
+By default `headless: false` in `config.yaml`, so the Playwright Chromium window is visible on screen. You can watch Claude navigate in real time. Set `headless: true` to run silently in the background.
+
+### Changing the model
+
+Edit `config.yaml`:
+
+```yaml
+agent:
+  model: "claude-opus-4-6"   # more capable, slower
+  # model: "claude-sonnet-4-6"  # default — fast and capable
+  max_tokens: 8096
+```
+
+Or use an environment variable without restarting (requires a new session):
+
+```bash
+MINIAGENT_AGENT__MODEL=claude-opus-4-6 uv run python -m miniagent
+```
+
+### Persisted sessions
+
+Conversations are stored as JSONL files under `~/.miniagent/sessions/`. Each session key maps to one file. To keep history across page reloads, change the session key in `miniagent/ui/index.html`:
+
+```js
+// line ~373 in ui/index.html
+const SESSION_KEY = "my-persistent-session";  // fixed key = persistent history
+// const SESSION_KEY = "session-" + crypto.randomUUID();  // random = fresh each load
+```
+
+To clear a session, delete the corresponding file:
+
+```bash
+rm ~/.miniagent/sessions/my-persistent-session.jsonl
+```
+
+### Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| Blinking cursor, no response | API key not set | Check `.env` has `MINIAGENT_ANTHROPIC_API_KEY` |
+| "Browser connection refused" | Browser server not running | Restart — `__main__.py` now starts both servers |
+| Click times out | JS overlay intercepting click | Already handled — `dispatch_event` fallback is automatic |
+| Image too large error | Full-page screenshot > 8000px | Already fixed — viewport-only screenshots |
+| Response includes old context | Using same session key across conversations | Each tab gets its own key by default |
+
+---
+
 ## Why I built this
 
 I wanted to deeply understand how a production AI agent system is actually structured — not from tutorials, but by building a real working system from scratch.
