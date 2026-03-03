@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>miniagent</title>
+  <style>
+    /* ── Reset & Base ───────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d0d0f;
+      --surface:   #17171b;
+      --surface2:  #1f1f25;
+      --border:    #2a2a33;
+      --accent:    #5b8af5;
+      --accent2:   #7c5bf5;
+      --text:      #e0e0e8;
+      --text-dim:  #7a7a8a;
+      --text-user: #a8d8ea;
+      --green:     #4caf77;
+      --red:       #e05a5a;
+      --yellow:    #e0b84a;
+      --mono:      "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace;
+      --sans:      system-ui, -apple-system, sans-serif;
+      --radius:    8px;
+      --radius-sm: 4px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.6;
+      overflow: hidden;
+    }
+
+    /* ── Layout ─────────────────────────────────────────────────── */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    #header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    #header-title {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      color: var(--text);
+    }
+
+    #header-title span {
+      color: var(--accent);
+    }
+
+    #status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+    }
+
+    #status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      transition: background 0.3s;
+    }
+
+    #status-dot.connected    { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    #status-dot.connecting   { background: var(--yellow); animation: pulse 1.2s infinite; }
+    #status-dot.disconnected { background: var(--red); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    /* ── Messages ───────────────────────────────────────────────── */
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      scroll-behavior: smooth;
+    }
+
+    #messages::-webkit-scrollbar { width: 5px; }
+    #messages::-webkit-scrollbar-track { background: transparent; }
+    #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .msg-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .msg-wrapper.user  { align-items: flex-end; }
+    .msg-wrapper.assistant { align-items: flex-start; }
+
+    .msg-label {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+      letter-spacing: 0.05em;
+      padding: 0 4px;
+    }
+
+    .msg-bubble {
+      max-width: 82%;
+      padding: 12px 16px;
+      border-radius: var(--radius);
+      word-break: break-word;
+    }
+
+    .msg-wrapper.user .msg-bubble {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text-user);
+      border-radius: var(--radius) var(--radius) 2px var(--radius);
+    }
+
+    .msg-wrapper.assistant .msg-bubble {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: var(--radius) var(--radius) var(--radius) 2px;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    /* Tool indicators inside assistant bubble */
+    .tool-indicator {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 5px 0;
+      color: var(--text-dim);
+      font-size: 12px;
+      font-family: var(--mono);
+    }
+
+    .tool-icon {
+      color: var(--accent2);
+      flex-shrink: 0;
+    }
+
+    .tool-name {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .tool-input-preview {
+      color: var(--text-dim);
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 360px;
+    }
+
+    /* Token text area */
+    .token-text {
+      white-space: pre-wrap;
+      margin-top: 4px;
+    }
+
+    /* Streaming cursor */
+    .cursor {
+      display: inline-block;
+      width: 2px;
+      height: 1em;
+      background: var(--accent);
+      vertical-align: text-bottom;
+      animation: blink 0.8s step-end infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0; }
+    }
+
+    /* Error state */
+    .msg-error {
+      color: var(--red);
+      font-size: 12px;
+      font-family: var(--mono);
+      padding: 6px 10px;
+      background: rgba(224, 90, 90, 0.1);
+      border: 1px solid rgba(224, 90, 90, 0.3);
+      border-radius: var(--radius-sm);
+      margin-top: 4px;
+    }
+
+    /* Screenshot inside bubble */
+    .screenshot-img {
+      max-width: 100%;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      margin-top: 6px;
+    }
+
+    /* Done / finalized state */
+    .msg-wrapper.assistant.done .msg-bubble {
+      border-color: var(--border);
+    }
+
+    /* Welcome placeholder */
+    #welcome {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: var(--text-dim);
+      font-size: 13px;
+      text-align: center;
+      padding: 40px;
+    }
+
+    #welcome-logo {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+      margin-bottom: 6px;
+    }
+
+    #welcome-logo span { color: var(--accent); }
+
+    #welcome-hint {
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
+    /* ── Input area ─────────────────────────────────────────────── */
+    #input-area {
+      flex-shrink: 0;
+      padding: 14px 20px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+    }
+
+    #prompt {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+      padding: 10px 14px;
+      resize: none;
+      outline: none;
+      min-height: 42px;
+      max-height: 180px;
+      line-height: 1.5;
+      overflow-y: auto;
+      transition: border-color 0.2s;
+    }
+
+    #prompt::placeholder { color: var(--text-dim); }
+    #prompt:focus { border-color: var(--accent); }
+
+    .btn {
+      flex-shrink: 0;
+      height: 42px;
+      padding: 0 18px;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, background 0.15s;
+      font-family: var(--sans);
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    #btn-send {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    #btn-send:not(:disabled):hover { background: #4a79e4; }
+
+    #btn-stop {
+      background: var(--surface2);
+      color: var(--red);
+      border: 1px solid var(--border);
+    }
+
+    #btn-stop:not(:disabled):hover { background: rgba(224, 90, 90, 0.15); }
+
+    /* Reconnect banner */
+    #reconnect-banner {
+      display: none;
+      padding: 8px 20px;
+      background: rgba(224, 180, 74, 0.15);
+      border-bottom: 1px solid rgba(224, 180, 74, 0.3);
+      color: var(--yellow);
+      font-size: 12px;
+      font-family: var(--mono);
+      text-align: center;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <div id="header">
+    <div id="header-title">mini<span>agent</span></div>
+    <div id="status-indicator">
+      <div id="status-dot" class="connecting"></div>
+      <span id="status-text">connecting…</span>
+    </div>
+  </div>
+
+  <div id="reconnect-banner" role="status"></div>
+
+  <div id="messages">
+    <div id="welcome">
+      <div id="welcome-logo">mini<span>agent</span></div>
+      <div>Your personal AI gateway</div>
+      <div id="welcome-hint">Type a message below to get started.</div>
+    </div>
+  </div>
+
+  <div id="input-area">
+    <textarea
+      id="prompt"
+      rows="1"
+      placeholder="Type a message…"
+      autocomplete="off"
+      spellcheck="true"
+    ></textarea>
+    <button id="btn-send" class="btn" disabled>Send</button>
+    <button id="btn-stop" class="btn" disabled>Stop</button>
+  </div>
+
+</div>
+
+<script>
+// ── Constants ─────────────────────────────────────────────────────
+const WS_URL        = "ws://localhost:18789/ws";
+const SESSION_KEY   = "default";
+const RECONNECT_MIN = 500;   // ms
+const RECONNECT_MAX = 5000;  // ms
+
+// ── State ─────────────────────────────────────────────────────────
+let ws               = null;
+let wsConnected      = false;
+let reconnectDelay   = RECONNECT_MIN;
+let reconnectTimer   = null;
+
+// req_id → { resolve, reject }
+const pending = new Map();
+
+// run_id → { bubble, tokenEl, cursorEl, finalized }
+const runs = new Map();
+
+// The run_id of the currently streaming agent turn (null if idle)
+let activeRunId = null;
+
+// ── DOM refs ─────────────────────────────────────────────────────
+const $messages        = document.getElementById("messages");
+const $welcome         = document.getElementById("welcome");
+const $prompt          = document.getElementById("prompt");
+const $btnSend         = document.getElementById("btn-send");
+const $btnStop         = document.getElementById("btn-stop");
+const $statusDot       = document.getElementById("status-dot");
+const $statusText      = document.getElementById("status-text");
+const $reconnectBanner = document.getElementById("reconnect-banner");
+
+// ── Utility ───────────────────────────────────────────────────────
+function uuid() {
+  return crypto.randomUUID();
+}
+
+function scrollBottom() {
+  $messages.scrollTop = $messages.scrollHeight;
+}
+
+function setStatus(state, label) {
+  $statusDot.className = state;
+  $statusText.textContent = label;
+}
+
+function setInputEnabled(enabled) {
+  $prompt.disabled  = !enabled;
+  $btnSend.disabled = !enabled;
+}
+
+function setRunning(running) {
+  $btnStop.disabled = !running;
+  setInputEnabled(!running);
+}
+
+// ── WebSocket ─────────────────────────────────────────────────────
+function connect() {
+  if (ws) {
+    try { ws.close(); } catch (_) {}
+  }
+
+  setStatus("connecting", "connecting…");
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    wsConnected    = true;
+    reconnectDelay = RECONNECT_MIN;
+    $reconnectBanner.style.display = "none";
+    setStatus("connected", "connected");
+    setInputEnabled(true);
+
+    // Handshake: send hello
+    sendFrame({ type: "req", id: uuid(), method: "hello", params: null });
+  };
+
+  ws.onclose = () => {
+    wsConnected = false;
+    setStatus("disconnected", "disconnected");
+    setInputEnabled(false);
+    $btnStop.disabled = true;
+
+    // Finalize any active run as errored
+    if (activeRunId) {
+      markRunError(activeRunId, "Connection lost");
+      activeRunId = null;
+    }
+
+    scheduleReconnect();
+  };
+
+  ws.onerror = () => {
+    // onclose fires after onerror; nothing extra needed
+  };
+
+  ws.onmessage = ({ data }) => {
+    let frame;
+    try { frame = JSON.parse(data); } catch { return; }
+    handleFrame(frame);
+  };
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  const delay = reconnectDelay;
+  reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX);
+
+  $reconnectBanner.textContent = `Reconnecting in ${(delay / 1000).toFixed(1)}s…`;
+  $reconnectBanner.style.display = "block";
+
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, delay);
+}
+
+// ── Frame I/O ─────────────────────────────────────────────────────
+function sendFrame(frame) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify(frame));
+}
+
+/**
+ * Send an RPC request. Returns a Promise that resolves with the first
+ * ResponseFrame payload (ok=true) or rejects with the ErrorShape (ok=false).
+ */
+function rpc(method, params) {
+  const id = uuid();
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve, reject, method });
+    sendFrame({ type: "req", id, method, params });
+  });
+}
+
+// ── Frame dispatcher ──────────────────────────────────────────────
+function handleFrame(frame) {
+  switch (frame.type) {
+    case "res":
+      handleResponse(frame);
+      break;
+    case "event":
+      handleEvent(frame);
+      break;
+    default:
+      // Unknown frame type — ignore
+      break;
+  }
+}
+
+function handleResponse(frame) {
+  const entry = pending.get(frame.id);
+  if (!entry) return;
+
+  if (!frame.ok) {
+    pending.delete(frame.id);
+    entry.reject(frame.error || { code: "unknown", message: "Request failed" });
+    return;
+  }
+
+  const payload = frame.payload ?? frame.result ?? {};
+
+  // For the agent method the server sends two responses:
+  //   1st: { run_id, status: "accepted" }
+  //   2nd: { run_id, status: "ok" }
+  // We resolve on the first and keep the entry alive for the second.
+  const status = payload.status;
+  if (entry.method === "agent") {
+    if (status === "accepted") {
+      entry.resolve(payload);
+      // Keep the pending entry — the 2nd response will clean it up
+    } else {
+      // 2nd response (status="ok") or any other final state
+      pending.delete(frame.id);
+      if (status === "ok") {
+        finalizeRun(payload.run_id);
+      }
+    }
+  } else {
+    pending.delete(frame.id);
+    entry.resolve(payload);
+  }
+}
+
+function handleEvent(frame) {
+  const { event, payload } = frame;
+
+  // ── Direct token/tool_call/done events ──────────────────────────
+  // Shape: { type: "event", event: "token", payload: { text: "..." }, seq: N }
+  if (event === "token") {
+    const text   = payload?.text ?? "";
+    const runId  = payload?.run_id ?? activeRunId;
+    if (runId) appendToken(runId, text);
+    return;
+  }
+
+  if (event === "tool_call") {
+    const runId = payload?.run_id ?? activeRunId;
+    if (runId) {
+      appendToolIndicator(runId, payload?.name ?? "tool", payload?.input ?? null);
+    }
+    return;
+  }
+
+  if (event === "done") {
+    const runId = payload?.run_id ?? activeRunId;
+    if (runId) finalizeRun(runId);
+    return;
+  }
+
+  // ── Wrapped agent-event (DESIGN.md sketch style) ─────────────────
+  // Shape: { type: "event", event: "agent-event", payload: { run_id, stream, data } }
+  if (event === "agent-event") {
+    handleAgentEvent(payload);
+    return;
+  }
+
+  // ── Connection challenge (server asks client to identify) ─────────
+  if (event === "connect.challenge") {
+    // Server might send this; respond with a connect RPC
+    rpc("connect", { client: { id: "web-ui", version: "1.0" } }).catch(() => {});
+    return;
+  }
+
+  // Other events (tick, etc.) — ignore
+}
+
+/**
+ * Handle the agent-event wrapper used in DESIGN.md § 8.
+ * payload = { run_id, stream: "assistant"|"tool"|"lifecycle", data: {...} }
+ */
+function handleAgentEvent(payload) {
+  if (!payload) return;
+  const { run_id, stream, data } = payload;
+
+  if (stream === "assistant") {
+    appendToken(run_id, data?.delta ?? data?.text ?? "");
+  } else if (stream === "tool") {
+    if (data?.phase === "start") {
+      appendToolIndicator(run_id, data.tool_name ?? "tool", data.input ?? null);
+    } else if (data?.phase === "result") {
+      if (data.tool_name === "screenshot" && data.result?.image_b64) {
+        appendScreenshot(run_id, data.result.image_b64);
+      }
+    }
+  } else if (stream === "lifecycle") {
+    if (data?.status === "complete") finalizeRun(run_id);
+    if (data?.status === "error")    markRunError(run_id, data.message ?? "Agent error");
+  }
+}
+
+// ── Rendering helpers ─────────────────────────────────────────────
+
+/** Remove the welcome splash if it's still showing. */
+function hideWelcome() {
+  if ($welcome && $welcome.parentNode) {
+    $welcome.remove();
+  }
+}
+
+/** Append a user message bubble to the chat. */
+function appendUserMessage(text) {
+  hideWelcome();
+  const wrapper = document.createElement("div");
+  wrapper.className = "msg-wrapper user";
+  wrapper.innerHTML = `
+    <div class="msg-label">you</div>
+    <div class="msg-bubble">${escHtml(text)}</div>
+  `;
+  $messages.appendChild(wrapper);
+  scrollBottom();
+}
+
+/**
+ * Create an empty assistant bubble for the given run_id.
+ * Returns the object stored in runs map.
+ */
+function createAssistantBubble(runId) {
+  hideWelcome();
+
+  const wrapper  = document.createElement("div");
+  wrapper.className = "msg-wrapper assistant";
+  wrapper.dataset.runId = runId;
+
+  const label    = document.createElement("div");
+  label.className = "msg-label";
+  label.textContent = "assistant";
+
+  const bubble   = document.createElement("div");
+  bubble.className = "msg-bubble";
+
+  const tokenEl  = document.createElement("span");
+  tokenEl.className = "token-text";
+
+  const cursor   = document.createElement("span");
+  cursor.className = "cursor";
+
+  bubble.appendChild(tokenEl);
+  bubble.appendChild(cursor);
+  wrapper.appendChild(label);
+  wrapper.appendChild(bubble);
+  $messages.appendChild(wrapper);
+  scrollBottom();
+
+  const entry = { wrapper, bubble, tokenEl, cursorEl: cursor, finalized: false };
+  runs.set(runId, entry);
+  return entry;
+}
+
+/** Append a streaming token to the run's bubble, creating it if needed. */
+function appendToken(runId, text) {
+  if (!text) return;
+  let entry = runs.get(runId);
+  if (!entry) entry = createAssistantBubble(runId);
+  if (entry.finalized) return;
+  entry.tokenEl.textContent += text;
+  scrollBottom();
+}
+
+/** Append a tool indicator row to the run's bubble. */
+function appendToolIndicator(runId, toolName, input) {
+  let entry = runs.get(runId);
+  if (!entry) entry = createAssistantBubble(runId);
+  if (entry.finalized) return;
+
+  const inputPreview = input
+    ? JSON.stringify(input).slice(0, 120)
+    : "";
+
+  const row = document.createElement("div");
+  row.className = "tool-indicator";
+  row.innerHTML = `
+    <span class="tool-icon">&#9881;</span>
+    <div>
+      <span class="tool-name">${escHtml(toolName)}</span>
+      ${inputPreview ? `<div class="tool-input-preview">${escHtml(inputPreview)}</div>` : ""}
+    </div>
+  `;
+
+  // Insert the tool row before the token text so tool calls appear above text
+  entry.bubble.insertBefore(row, entry.tokenEl);
+  scrollBottom();
+}
+
+/** Append an inline screenshot image to the run's bubble. */
+function appendScreenshot(runId, imageB64) {
+  let entry = runs.get(runId);
+  if (!entry) return;
+  if (entry.finalized) return;
+
+  const img = document.createElement("img");
+  img.className = "screenshot-img";
+  img.src = `data:image/png;base64,${imageB64}`;
+  img.alt = "screenshot";
+
+  entry.bubble.insertBefore(img, entry.tokenEl);
+  scrollBottom();
+}
+
+/** Mark a run as complete — remove cursor, set done styling. */
+function finalizeRun(runId) {
+  if (runId) {
+    const entry = runs.get(runId);
+    if (entry && !entry.finalized) {
+      entry.finalized = true;
+      entry.cursorEl.remove();
+      entry.wrapper.classList.add("done");
+    }
+  }
+
+  if (activeRunId === runId || !runId) {
+    activeRunId = null;
+    setRunning(false);
+  }
+}
+
+/** Mark a run as errored — show error message. */
+function markRunError(runId, message) {
+  const entry = runId ? runs.get(runId) : null;
+  if (entry && !entry.finalized) {
+    entry.finalized = true;
+    entry.cursorEl.remove();
+    const errDiv = document.createElement("div");
+    errDiv.className = "msg-error";
+    errDiv.textContent = `Error: ${message}`;
+    entry.bubble.appendChild(errDiv);
+  } else if (!entry) {
+    // No bubble yet — append a standalone error
+    hideWelcome();
+    const wrapper = document.createElement("div");
+    wrapper.className = "msg-wrapper assistant";
+    wrapper.innerHTML = `
+      <div class="msg-label">assistant</div>
+      <div class="msg-bubble"><div class="msg-error">Error: ${escHtml(message)}</div></div>
+    `;
+    $messages.appendChild(wrapper);
+  }
+  scrollBottom();
+
+  if (activeRunId === runId || !runId) {
+    activeRunId = null;
+    setRunning(false);
+  }
+}
+
+/** HTML-escape a string. */
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// ── Send message ──────────────────────────────────────────────────
+async function sendMessage() {
+  const text = $prompt.value.trim();
+  if (!text || !wsConnected) return;
+
+  $prompt.value = "";
+  autoResize($prompt);
+
+  appendUserMessage(text);
+  setRunning(true);
+
+  const idempotencyKey = uuid();
+
+  let ack;
+  try {
+    ack = await rpc("agent", {
+      message:         text,
+      session_key:     SESSION_KEY,
+      idempotency_key: idempotencyKey,
+    });
+  } catch (err) {
+    const msg = err?.message ?? JSON.stringify(err);
+    markRunError(null, msg);
+    setRunning(false);
+    return;
+  }
+
+  // ack = { run_id, status: "accepted" }
+  const runId = ack?.run_id ?? uuid();
+  activeRunId = runId;
+
+  // Create the assistant bubble now so tokens can fill it
+  createAssistantBubble(runId);
+}
+
+// ── Stop button ───────────────────────────────────────────────────
+function stopAgent() {
+  if (!activeRunId || !wsConnected) return;
+
+  rpc("chat.abort", { session_key: SESSION_KEY, run_id: activeRunId })
+    .catch(() => {});
+
+  markRunError(activeRunId, "Stopped by user");
+  activeRunId = null;
+  setRunning(false);
+}
+
+// ── Textarea auto-resize ──────────────────────────────────────────
+function autoResize(el) {
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 180) + "px";
+}
+
+// ── Event listeners ───────────────────────────────────────────────
+$prompt.addEventListener("input", () => autoResize($prompt));
+
+$prompt.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    if (!$btnSend.disabled) sendMessage();
+  }
+});
+
+$btnSend.addEventListener("click", () => sendMessage());
+$btnStop.addEventListener("click", () => stopAgent());
+
+// ── Boot ──────────────────────────────────────────────────────────
+connect();
+</script>
+</body>
+</html>

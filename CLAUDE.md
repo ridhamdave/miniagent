@@ -124,11 +124,30 @@ ui/         ← standalone HTML, any time
 
 ## Memory & Context Management
 
-- **MEMORY.md** lives in the Claude Code memory dir (auto-loaded each session)
-- **DESIGN.md** is the source of truth for architecture — link to sections, don't paraphrase
-- Before starting a session: check MEMORY.md for current implementation state
-- After completing a module: update MEMORY.md with what was built and any deviations from DESIGN.md
-- If a sub-agent deviates from DESIGN.md, note it in MEMORY.md under "Deviations"
+**MEMORY.md path** (absolute — works from any worktree):
+```
+/Users/ridhamdave/.claude/projects/-Users-ridhamdave-repos-open-agent-miniagent/memory/MEMORY.md
+```
+
+### Rules every agent must follow
+
+1. **Before starting work**: Read MEMORY.md. Check the Implementation State table to avoid duplicating work.
+2. **After finishing work**: Update MEMORY.md — this is mandatory, not optional.
+3. **DESIGN.md is the source of truth** — do not paraphrase it, link to it.
+
+### What to write to MEMORY.md when done
+
+Update the Implementation State table row for your module:
+```
+| `module/` | complete | brief note on any non-obvious choices |
+```
+
+If you deviated from DESIGN.md (different type names, different file split, etc.), append to the **Deviations** section:
+```
+- `module/file.py`: reason for deviation
+```
+
+If you hit a design ambiguity that future agents should know about, append to **Key Decisions**.
 
 ---
 

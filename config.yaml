@@ -1,0 +1,16 @@
+gateway:
+  port: 18789
+  host: "127.0.0.1"
+
+browser:
+  enabled: true
+  control_port: 18790
+  headless: false
+  timeout_ms: 8000
+
+agent:
+  model: "claude-sonnet-4-6"
+  max_tokens: 8096
+
+sessions_dir: "~/.miniagent/sessions"
+log_level: "info"
